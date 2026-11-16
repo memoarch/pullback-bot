@@ -264,8 +264,13 @@ def backtest(bars: dict[str, pd.DataFrame], capital=100_000.0, verbose=True):
 
 
 # ───────────────────────── 纸面交易(每日收盘后运行) ─────────────────────────
+DRY = False
+
+
 def log(msg):
     print(msg)
+    if DRY:                                     # 试运行不写日志文件
+        return
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"{datetime.now():%Y-%m-%d %H:%M} {msg}\n")
 
@@ -333,6 +338,8 @@ class Broker:
 
 
 def run(dry: bool):
+    global DRY
+    DRY = dry
     key, sec = load_env()
     br = Broker(key, sec, dry)
     bars = fetch_bars(key, sec, UNIVERSE, days=450)
