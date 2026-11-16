@@ -1,0 +1,8 @@
+{
+  "SPY": {
+    "pending": true,
+    "stop": 717.87,
+    "init_stop": 717.87,
+    "signal_close": 740.04
+  }
+}
