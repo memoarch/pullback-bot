@@ -1,0 +1,4 @@
+.env
+__pycache__/
+*.pyc
+pullback_backtest_trades.csv
