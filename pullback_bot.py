@@ -55,6 +55,8 @@ SLIPPAGE = 0.0005      # 回测滑点 5 bps
 DATA_FEED = "iex"      # 免费账户用 iex
 
 HERE = Path(__file__).resolve().parent
+NAME = "pullback"            # 状态/日志文件名前缀
+EXIT_NAME = "时间止损"        # manage_position 返回 exit 时的出场原因名称
 STATE_FILE = HERE / "pullback_state.json"
 LOG_FILE = HERE / "pullback_log.txt"
 
@@ -99,12 +101,13 @@ def position_size(equity: float, close: float, atr: float) -> tuple[int, float]:
     return max(qty, 0), round(close - risk_per_share, 2)
 
 
-def manage_position(pos: dict, close: float, atr: float) -> tuple[str, str]:
+def manage_position(pos: dict, row) -> tuple[str, str]:
     """
     每个收盘后调用一次,更新 pos 并返回 (动作, 白话理由)。
     动作: 'hold' | 'half'(卖一半) | 'exit'(全部卖出)
     pos 字段: entry, stop, init_stop, qty, bars, high, half
     """
+    close, atr = float(row["close"]), float(row["atr"])
     pos["bars"] += 1
     pos["high"] = max(pos["high"], close)
     r = pos["entry"] - pos["init_stop"]
@@ -204,7 +207,7 @@ def backtest(bars: dict[str, pd.DataFrame], capital=100_000.0, verbose=True):
             elif sym in positions:
                 q = positions[sym]["qty"] if od["type"] == "exit" else positions[sym]["qty"] // 2
                 if q:
-                    close_out(sym, q, o * (1 - SLIPPAGE), day, "时间止损" if od["type"] == "exit" else "移动止损")
+                    close_out(sym, q, o * (1 - SLIPPAGE), day, EXIT_NAME if od["type"] == "exit" else "卖出一半")
         # 2) 盘中:止损
         for sym in list(positions):
             d = data[sym]
@@ -217,7 +220,7 @@ def backtest(bars: dict[str, pd.DataFrame], capital=100_000.0, verbose=True):
         for sym, p in positions.items():
             d = data[sym]
             if day in d.index and p["date"] != day:
-                act, _ = manage_position(p, d.at[day, "close"], d.at[day, "atr"])
+                act, _ = manage_position(p, d.loc[day])
                 if act != "hold":
                     pending[sym] = dict(type=act)
         for sym, d in data.items():
@@ -254,7 +257,7 @@ def backtest(bars: dict[str, pd.DataFrame], capital=100_000.0, verbose=True):
             print(t.groupby("reason")["r"].agg(笔数="count", 平均R="mean").round(2).to_string())
             print("\n按股票:")
             print(t.groupby("symbol")["r"].agg(笔数="count", 平均R="mean", 合计R="sum").round(2).to_string())
-            out = HERE / "pullback_backtest_trades.csv"
+            out = HERE / f"{NAME}_backtest_trades.csv"
             t.to_csv(out, index=False)
             print(f"\n逐笔明细已存到 {out.name}")
     return eq, t
@@ -365,7 +368,7 @@ def run(dry: bool):
             continue
         pos["last_day"], pos["qty"] = day, qty
         old_stop = pos["stop"]
-        act, why = manage_position(pos, float(last["close"]), float(last["atr"]))
+        act, why = manage_position(pos, last)
         log(f"{sym}: {why}")
         if act == "exit":
             br.cancel_all(sym)
@@ -400,7 +403,11 @@ def run(dry: bool):
         if qty < 1:
             log(f"{sym}: 有信号但按1%风险算不足1股,放弃")
             continue
-        br.buy_with_stop(sym, qty, stop)
+        try:
+            br.buy_with_stop(sym, qty, stop)
+        except Exception as e:                  # 例如购买力不足被拒:记下来,继续处理别的股票
+            log(f"{sym}: 有信号但下单被拒 —— {e}")
+            continue
         state[sym] = dict(pending=True, stop=stop, init_stop=stop, signal_close=float(last["close"]))
         log(f"{sym}: 买入 —— {why}")
         log(f"{sym}: → 明日开盘买 {qty} 股(约 ${qty * last['close']:,.0f}),止损 {stop:.2f},"
@@ -429,8 +436,8 @@ def status():
                   f"{'(已卖一半,跟踪中)' if pos['half'] else ''}")
 
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="版本A:顺大势买回调(Alpaca 纸面交易)")
+def main(desc="版本A:顺大势买回调(Alpaca 纸面交易)"):
+    ap = argparse.ArgumentParser(description=desc)
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="每日收盘后运行")
     r.add_argument("--dry-run", action="store_true", help="只打印,不下单")
@@ -445,3 +452,7 @@ if __name__ == "__main__":
     else:
         k, s = load_env()
         backtest(fetch_bars(k, s, UNIVERSE, days=int(a.years * 365) + 300))
+
+
+if __name__ == "__main__":
+    main()
