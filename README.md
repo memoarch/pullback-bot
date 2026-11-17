@@ -1,11 +1,12 @@
 # pullback-bot
 
-Alpaca **纸面账户**上的两套机械化策略,每个交易日收盘后各运行一次,共用同一套下单/回测引擎。
+Alpaca **纸面账户**上的三套机械化策略,每个交易日收盘后各运行一次,共用同一套下单/回测引擎。
 
 - `pullback_bot.py` 版本A:顺大势、买回调
 - `breakout_bot.py` 版本B:突破跟踪
+- `alphatrend_bot.py` 版本C:AlphaTrend 趋势跟随
 
-同一只股票同一时间只归一个策略(谁先买到归谁),两者各自记账。
+同一只股票同一时间只归一个策略(谁先买到归谁),三者各自记账。
 
 ## 版本A规则
 
@@ -30,6 +31,17 @@ Alpaca **纸面账户**上的两套机械化策略,每个交易日收盘后各�
 | 初始止损 | 信号日收盘 − 2×ATR,挂在券商端(GTC) |
 | 卖出 | 收盘价 < 此前10日最低价 → 次日开盘全部卖出 |
 
+## 版本C规则
+
+AlphaTrend(KivancOzbilgic 的 TradingView 指标,周期 14、倍数 1,原指标默认值):动能偏多(RSI14 ≥ 50)时线 = max(最低价 − ATR, 昨天的线),只升不降;动能偏空时线 = min(最高价 + ATR, 昨天的线),只降不升。用的是原指标的"无成交量"选项(RSI 代替 MFI),因为免费 IEX 数据的成交量不完整。
+
+| 环节 | 规则 |
+|---|---|
+| 买入 | AlphaTrend 线由空转多(上穿两天前的自己)的当天;次日开盘成交。多头途中线再抬高不算新信号 |
+| 仓位 | 与版本A相同(1%风险 ÷ 2×ATR,单只 ≤ 25%,最多4只) |
+| 初始止损 | 信号日收盘 − 2×ATR,挂在券商端(GTC) |
+| 卖出 | AlphaTrend 线转空(下穿两天前的自己)→ 次日开盘全部卖出 |
+
 ## 用法
 
 ```bash
@@ -41,23 +53,23 @@ python pullback_bot.py backtest         # 历史回测
 python pullback_bot.py run --dry-run    # 只打印,不下单
 python pullback_bot.py run              # 向纸面账户下单
 python pullback_bot.py status           # 查看持仓
-# 版本B把 pullback_bot.py 换成 breakout_bot.py 即可
+# 版本B/C 把 pullback_bot.py 换成 breakout_bot.py / alphatrend_bot.py 即可
 ```
 
 ## 文件
 
-- `pullback_state.json` / `breakout_state.json` 各策略当前持仓状态(每日运行后更新并提交)
-- `pullback_log.txt` / `breakout_log.txt` 每日决策日志,每只股票一句白话理由
+- `pullback_state.json` / `breakout_state.json` / `alphatrend_state.json` 各策略当前持仓状态(每日运行后更新并提交)
+- `pullback_log.txt` / `breakout_log.txt` / `alphatrend_log.txt` 每日决策日志,每只股票一句白话理由
 
 ## 基准回测(2023-01 → 2026-11-16,IEX日线,初始 $100k,各自单独回测)
 
-| | 版本A | 版本B | 五只等权买入持有 |
-|---|---|---|---|
-| 总收益 | +42.0% | +50.1% | +235% |
-| 最大回撤 | −12.7% | −12.1% | −31% |
-| 交易笔数 | 153 | 82 | — |
-| 胜率 | 52% | 43% | — |
-| 每笔期望 | +0.31R | +0.62R | — |
-| 最长连亏 | 10 | 8 | — |
+| | 版本A | 版本B | 版本C | 五只等权买入持有 |
+|---|---|---|---|---|
+| 总收益 | +42.0% | +50.1% | +80.5% | +235% |
+| 最大回撤 | −12.7% | −12.1% | −10.8% | −31% |
+| 交易笔数 | 153 | 82 | 63 | — |
+| 胜率 | 52% | 43% | 44% | — |
+| 每笔期望 | +0.31R | +0.62R | +1.07R | — |
+| 最长连亏 | 10 | 8 | 9 | — |
 
 规则固定后不随回测结果调参,以纸面交易记录为准。
