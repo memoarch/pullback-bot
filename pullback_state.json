@@ -1,8 +1,13 @@
 {
   "SPY": {
-    "pending": true,
     "stop": 717.87,
     "init_stop": 717.87,
-    "signal_close": 740.04
+    "signal_close": 740.04,
+    "entry": 738.17,
+    "high": 738.17,
+    "qty": 33,
+    "bars": 0,
+    "half": false,
+    "date": "2026-11-17"
   }
 }
